@@ -1,9 +1,29 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="true" userDefinedModelVersionIdentifier="">
-    <entity name="Item" representedClassName="Item" syncable="YES" codeGenerationType="class">
-        <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="26500" systemVersion="25A0" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="SpeedTestRecord" representedClassName="SpeedTestRecord" syncable="YES" codeGenerationType="class">
+        <attribute name="downloadMbps" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isp" optional="YES" attributeType="String"/>
+        <attribute name="jitterMs" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="latencyMs" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="packetLoss" optional="YES" attributeType="Double" usesScalarValueType="YES"/>
+        <attribute name="resultURL" optional="YES" attributeType="String"/>
+        <attribute name="serverName" optional="YES" attributeType="String"/>
+        <attribute name="timestamp" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="uploadMbps" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+    </entity>
+    <entity name="UsageBucket" representedClassName="UsageBucket" syncable="YES" codeGenerationType="class">
+        <attribute name="appIdentifier" optional="YES" attributeType="String"/>
+        <attribute name="bucketStart" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="bytesIn" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="bytesOut" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="displayName" optional="YES" attributeType="String"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="pid" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="processName" optional="YES" attributeType="String"/>
     </entity>
     <elements>
-        <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
+        <element name="UsageBucket" positionX="-63" positionY="-18" width="128" height="149"/>
+        <element name="SpeedTestRecord" positionX="144" positionY="-18" width="128" height="179"/>
     </elements>
 </model>

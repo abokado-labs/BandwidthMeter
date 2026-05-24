@@ -1,0 +1,69 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Xcode user-specific
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+project.xcworkspace/xcuserdata/
+
+# Xcode build output
+build/
+DerivedData/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+
+# CocoaPods (unused here, kept defensively)
+Pods/
+*.xcworkspace
+
+# Carthage (unused here)
+Carthage/Build/
+
+# Fastlane (unused here)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Sparkle — never commit the EdDSA private key.
+# The Sparkle private key lives only in Bob's macOS Keychain.
+sparkle_*.key
+sparkle_priv.txt
+*.eddsa_priv
+
+# Notarization / App Store Connect API keys
+AuthKey_*.p8
+*.p12
+*.mobileprovision
+
+# Environment files
+.env
+.env.local
+*.env
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# Local notes / scratch
+.notes/
+TODO.local.md
