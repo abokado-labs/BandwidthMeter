@@ -60,7 +60,7 @@ struct OnboardingView: View {
                 Button {
                     model.requestWiFiNamePermission()
                 } label: {
-                    Label("Allow Wi-Fi Name", systemImage: "wifi")
+                    Label("Access Wi-Fi Name", systemImage: "wifi")
                 }
 
                 Spacer()

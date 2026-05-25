@@ -61,6 +61,7 @@ struct SettingsView: View {
                     .frame(width: 24, alignment: .trailing)
             }
             Toggle("Show icon in menu bar", isOn: binding(\.showIcon))
+            Toggle("Show arrows in menu bar", isOn: binding(\.showMenuArrows))
         }
         .formStyle(.grouped)
     }

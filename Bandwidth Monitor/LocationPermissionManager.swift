@@ -8,6 +8,9 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
     static let shared = LocationPermissionManager()
 
     private let manager = CLLocationManager()
+    private var previousActivationPolicy: NSApplication.ActivationPolicy?
+    private var isRequestingAuthorization = false
+    private var requestGeneration = 0
     var onAuthorizationChanged: (() -> Void)?
     var onDiagnosticsChanged: ((String) -> Void)?
     private(set) var diagnosticsText = "No permission request yet"
@@ -22,7 +25,7 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
             return "Permission restricted"
         case .denied:
             return "Permission denied"
-        case .authorizedAlways, .authorizedWhenInUse:
+        case .authorizedAlways:
             return "Permission granted"
         @unknown default:
             return "Permission unknown"
@@ -42,8 +45,8 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
 
         switch manager.authorizationStatus {
         case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .restricted, .denied, .authorizedAlways, .authorizedWhenInUse:
+            requestForegroundAuthorization()
+        case .restricted, .denied, .authorizedAlways:
             break
         @unknown default:
             break
@@ -59,13 +62,11 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
 
         switch manager.authorizationStatus {
         case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-            manager.requestLocation()
+            requestForegroundAuthorization()
         case .denied, .restricted:
             openLocationServicesSettings()
-        case .authorizedAlways, .authorizedWhenInUse:
+        case .authorizedAlways:
             manager.requestLocation()
-            break
         @unknown default:
             break
         }
@@ -73,6 +74,12 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         recordDiagnostic("Authorization changed. \(stateSummary)")
+        if manager.authorizationStatus == .authorizedAlways {
+            manager.requestLocation()
+        }
+        if manager.authorizationStatus != .notDetermined {
+            restoreActivationPolicyAfterPrompt()
+        }
         onAuthorizationChanged?()
     }
 
@@ -92,6 +99,50 @@ final class LocationPermissionManager: NSObject, CLLocationManagerDelegate {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    private func requestForegroundAuthorization() {
+        guard !isRequestingAuthorization else { return }
+        isRequestingAuthorization = true
+        requestGeneration += 1
+        let generation = requestGeneration
+
+        if NSApp.activationPolicy() != .regular {
+            previousActivationPolicy = NSApp.activationPolicy()
+            NSApp.setActivationPolicy(.regular)
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+        recordDiagnostic("Requesting macOS Location permission. \(stateSummary)")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            self.manager.requestWhenInUseAuthorization()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self,
+                  self.isRequestingAuthorization,
+                  self.requestGeneration == generation else {
+                return
+            }
+
+            self.recordDiagnostic("Location permission dialog did not complete. \(self.stateSummary)")
+            self.restoreActivationPolicyAfterPrompt()
+            self.onAuthorizationChanged?()
+        }
+    }
+
+    private func restoreActivationPolicyAfterPrompt() {
+        guard isRequestingAuthorization else { return }
+        isRequestingAuthorization = false
+
+        guard let previousActivationPolicy else { return }
+        self.previousActivationPolicy = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NSApp.setActivationPolicy(previousActivationPolicy)
+        }
     }
 
     private var stateSummary: String {

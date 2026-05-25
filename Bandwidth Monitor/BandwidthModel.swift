@@ -61,18 +61,21 @@ final class BandwidthModel: ObservableObject {
         let total = ByteFormat.menuSpeed(totalDownloadBps + totalUploadBps, units: settings.units, scale: settings.unitScale, roundsScaledValues: settings.roundScaledMeasurements)
 
         let icon = settings.showIcon ? "􀙇 " : ""
+        let downPrefix = settings.showMenuArrows ? "↓ " : ""
+        let upPrefix = settings.showMenuArrows ? "↑ " : ""
+        let totalPrefix = settings.showMenuArrows ? "↕ " : ""
         switch settings.menuMetric {
         case .download:
-            return ["\(icon)↓ \(down)"]
+            return ["\(icon)\(downPrefix)\(down)"]
         case .upload:
-            return ["\(icon)↑ \(up)"]
+            return ["\(icon)\(upPrefix)\(up)"]
         case .both:
             if settings.menuLayout == .stacked {
-                return ["\(icon)↑ \(up)", "\(icon)↓ \(down)"]
+                return ["\(icon)\(upPrefix)\(up)", "\(icon)\(downPrefix)\(down)"]
             }
-            return ["\(icon)↓ \(down)  ↑ \(up)"]
+            return ["\(icon)\(downPrefix)\(down)  \(upPrefix)\(up)"]
         case .total:
-            return ["\(icon)↕ \(total)"]
+            return ["\(icon)\(totalPrefix)\(total)"]
         }
     }
 
@@ -561,6 +564,7 @@ struct AppSettings {
     var roundScaledMeasurements = false
     var menuFontSize: Double = 15
     var showIcon = false
+    var showMenuArrows = true
     var groupApps = true
     var hideSystemServices = false
     var samplingIntervalSeconds = 1
@@ -589,6 +593,9 @@ struct AppSettings {
         let fontSize = defaults.double(forKey: "menuFontSize")
         if fontSize > 0 { settings.menuFontSize = fontSize }
         settings.showIcon = defaults.bool(forKey: "showIcon")
+        if defaults.object(forKey: "showMenuArrows") != nil {
+            settings.showMenuArrows = defaults.bool(forKey: "showMenuArrows")
+        }
         if defaults.object(forKey: "groupApps") != nil {
             settings.groupApps = defaults.bool(forKey: "groupApps")
         }
@@ -619,6 +626,7 @@ struct AppSettings {
         defaults.set(roundScaledMeasurements, forKey: "roundScaledMeasurements")
         defaults.set(menuFontSize, forKey: "menuFontSize")
         defaults.set(showIcon, forKey: "showIcon")
+        defaults.set(showMenuArrows, forKey: "showMenuArrows")
         defaults.set(groupApps, forKey: "groupApps")
         defaults.set(hideSystemServices, forKey: "hideSystemServices")
         defaults.set(samplingIntervalSeconds, forKey: "samplingIntervalSeconds")

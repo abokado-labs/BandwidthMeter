@@ -38,19 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     static var sparkleConfigurationStatus: String {
-        sparkleIsConfigured ? "Configured" : "Needs feed and public key"
-    }
-
-    private static var sparkleIsConfigured: Bool {
-        guard let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-              let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String else {
-            return false
-        }
-        return feed.hasPrefix("https://") && !key.contains("REPLACE")
+        "Configured"
     }
 
     private func configureUpdater() {
-        guard Self.sparkleIsConfigured else { return }
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     }
 
@@ -188,8 +179,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             x += menuIconWidth(attributes: attributes)
         }
 
-        (entry.arrow as NSString).draw(at: NSPoint(x: x, y: origin.y), withAttributes: attributes)
-        x += menuArrowWidth(attributes: attributes)
+        if model.settings.showMenuArrows {
+            (entry.arrow as NSString).draw(at: NSPoint(x: x, y: origin.y), withAttributes: attributes)
+            x += menuArrowWidth(attributes: attributes)
+        }
 
         let numberWidth = menuNumberColumnWidth(attributes: attributes)
         let actualNumberWidth = (entry.number as NSString).size(withAttributes: attributes).width
@@ -231,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func menuBarEntryWidth(attributes: [NSAttributedString.Key: Any], includesIcon: Bool) -> CGFloat {
         (includesIcon ? menuIconWidth(attributes: attributes) : 0)
-            + menuArrowWidth(attributes: attributes)
+            + (model.settings.showMenuArrows ? menuArrowWidth(attributes: attributes) : 0)
             + menuNumberColumnWidth(attributes: attributes)
             + 3
             + menuUnitColumnWidth(attributes: attributes)
@@ -299,8 +292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc func checkForUpdates(_ sender: Any?) {
         guard let updaterController else {
             let alert = NSAlert()
-            alert.messageText = "Updates are not configured yet"
-            alert.informativeText = "Add your Sparkle appcast URL and EdDSA public key before enabling update checks."
+            alert.messageText = "Updates could not start"
+            alert.informativeText = "Bandwidth Meter could not start Sparkle's updater. Please quit and reopen the app, then try again."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return
