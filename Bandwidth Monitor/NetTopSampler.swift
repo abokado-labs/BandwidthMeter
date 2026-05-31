@@ -48,7 +48,9 @@ final class NetTopSampler {
                 downloadBps: Double(inDelta) / interval,
                 uploadBps: Double(outDelta) / interval,
                 download24h: 0,
-                upload24h: 0
+                upload24h: 0,
+                sampledDownloadBytes: inDelta,
+                sampledUploadBytes: outDelta
             ))
         }
 
@@ -178,7 +180,9 @@ enum AppGrouper {
                 downloadBps: members.map(\.downloadBps).reduce(0, +),
                 uploadBps: members.map(\.uploadBps).reduce(0, +),
                 download24h: members.map(\.download24h).reduce(0, +),
-                upload24h: members.map(\.upload24h).reduce(0, +)
+                upload24h: members.map(\.upload24h).reduce(0, +),
+                sampledDownloadBytes: members.map(\.sampledDownloadBytes).reduce(0, +),
+                sampledUploadBytes: members.map(\.sampledUploadBytes).reduce(0, +)
             )
         }
         .sorted { ($0.downloadBps + $0.uploadBps) > ($1.downloadBps + $1.uploadBps) }

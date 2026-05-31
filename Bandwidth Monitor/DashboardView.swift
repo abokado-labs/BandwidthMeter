@@ -6,6 +6,7 @@ struct DashboardView: View {
     @State private var appSortColumn: AppSortColumn = .app
     @State private var appSortAscending = true
     @State private var activityWindow: AppActivityWindow = .oneHour
+    @State private var displayedApps: [AppBandwidth] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,11 @@ struct DashboardView: View {
         }
         .frame(width: 430)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear(perform: refreshDisplayedApps)
+        .onChange(of: activityWindow) { _, _ in refreshDisplayedApps() }
+        .onChange(of: model.apps) { _, _ in refreshDisplayedApps() }
+        .onChange(of: model.download24h) { _, _ in refreshDisplayedApps() }
+        .onChange(of: model.upload24h) { _, _ in refreshDisplayedApps() }
     }
 
     private var header: some View {
@@ -143,8 +149,7 @@ struct DashboardView: View {
     }
 
     private var sortedApps: [AppBandwidth] {
-        let apps = model.appActivity(since: Date().addingTimeInterval(-activityWindow.interval))
-        let sorted = apps.sorted { lhs, rhs in
+        let sorted = displayedApps.sorted { lhs, rhs in
             switch appSortColumn {
             case .app:
                 lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
@@ -159,6 +164,10 @@ struct DashboardView: View {
             }
         }
         return appSortAscending ? sorted : sorted.reversed()
+    }
+
+    private func refreshDisplayedApps() {
+        displayedApps = model.appActivity(since: Date().addingTimeInterval(-activityWindow.interval))
     }
 
     private var speedTestCard: some View {

@@ -275,7 +275,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Bandwidth Monitor/Bandwidth_Monitor.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 002;
+				CURRENT_PROJECT_VERSION = 005;
 				DEVELOPMENT_TEAM = ZW6EQ2JWKC;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -284,11 +284,12 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Bandwidth Monitor/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Bandwidth Meter";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bobkitchen.BandwidthMeter;
 				PRODUCT_NAME = "Bandwidth Meter";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -309,7 +310,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 002;
+				CURRENT_PROJECT_VERSION = 005;
 				DEVELOPMENT_TEAM = ZW6EQ2JWKC;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -318,11 +319,12 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Bandwidth Monitor/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Bandwidth Meter";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bobkitchen.BandwidthMeter;
 				PRODUCT_NAME = "Bandwidth Meter";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

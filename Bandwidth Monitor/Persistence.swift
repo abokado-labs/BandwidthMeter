@@ -21,9 +21,9 @@ final class PersistenceController {
 
     func insertUsage(_ apps: [AppBandwidth]) {
         let context = container.newBackgroundContext()
-        context.perform {
+        context.performAndWait {
             let bucket = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
-            for app in apps where app.downloadBps > 0 || app.uploadBps > 0 {
+            for app in apps where app.sampledDownloadBytes > 0 || app.sampledUploadBytes > 0 || app.downloadBps > 0 || app.uploadBps > 0 {
                 let usage = NSManagedObject(entity: NSEntityDescription.entity(forEntityName: "UsageBucket", in: context)!, insertInto: context)
                 usage.setValue(UUID(), forKey: "id")
                 usage.setValue(bucket, forKey: "bucketStart")
@@ -31,8 +31,10 @@ final class PersistenceController {
                 usage.setValue(app.displayName, forKey: "displayName")
                 usage.setValue(app.processName, forKey: "processName")
                 usage.setValue(Int64(app.pid), forKey: "pid")
-                usage.setValue(Int64(app.downloadBps.rounded()), forKey: "bytesIn")
-                usage.setValue(Int64(app.uploadBps.rounded()), forKey: "bytesOut")
+                let bytesIn = app.sampledDownloadBytes > 0 ? app.sampledDownloadBytes : Int64(app.downloadBps.rounded())
+                let bytesOut = app.sampledUploadBytes > 0 ? app.sampledUploadBytes : Int64(app.uploadBps.rounded())
+                usage.setValue(bytesIn, forKey: "bytesIn")
+                usage.setValue(bytesOut, forKey: "bytesOut")
             }
             try? context.save()
         }
@@ -97,38 +99,59 @@ final class PersistenceController {
     }
 
     func usageApps(since date: Date) -> [AppBandwidth] {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "UsageBucket")
+        let request = NSFetchRequest<NSDictionary>(entityName: "UsageBucket")
+        request.resultType = .dictionaryResultType
         request.predicate = NSPredicate(format: "bucketStart >= %@", date as NSDate)
-        request.sortDescriptors = [NSSortDescriptor(key: "bucketStart", ascending: false)]
+        request.propertiesToGroupBy = ["appIdentifier", "displayName", "processName"]
 
-        let records = (try? container.viewContext.fetch(request)) ?? []
-        var apps: [String: AppBandwidth] = [:]
+        let appExpression = NSExpressionDescription()
+        appExpression.name = "appIdentifier"
+        appExpression.expression = NSExpression(forKeyPath: "appIdentifier")
+        appExpression.expressionResultType = .stringAttributeType
 
-        for record in records {
-            guard let appIdentifier = record.value(forKey: "appIdentifier") as? String else { continue }
-            let bytesIn = record.value(forKey: "bytesIn") as? Int64 ?? 0
-            let bytesOut = record.value(forKey: "bytesOut") as? Int64 ?? 0
+        let displayNameExpression = NSExpressionDescription()
+        displayNameExpression.name = "displayName"
+        displayNameExpression.expression = NSExpression(forKeyPath: "displayName")
+        displayNameExpression.expressionResultType = .stringAttributeType
 
-            if var app = apps[appIdentifier] {
-                app.download24h += bytesIn
-                app.upload24h += bytesOut
-                apps[appIdentifier] = app
-            } else {
-                apps[appIdentifier] = AppBandwidth(
-                    id: appIdentifier,
-                    displayName: record.value(forKey: "displayName") as? String ?? appIdentifier,
-                    processName: record.value(forKey: "processName") as? String ?? appIdentifier,
-                    pid: Int32(record.value(forKey: "pid") as? Int64 ?? 0),
-                    downloadBps: 0,
-                    uploadBps: 0,
-                    download24h: bytesIn,
-                    upload24h: bytesOut,
-                    isActive: false
-                )
-            }
+        let processNameExpression = NSExpressionDescription()
+        processNameExpression.name = "processName"
+        processNameExpression.expression = NSExpression(forKeyPath: "processName")
+        processNameExpression.expressionResultType = .stringAttributeType
+
+        let inExpression = NSExpressionDescription()
+        inExpression.name = "bytesInTotal"
+        inExpression.expression = NSExpression(forFunction: "sum:", arguments: [NSExpression(forKeyPath: "bytesIn")])
+        inExpression.expressionResultType = .integer64AttributeType
+
+        let outExpression = NSExpressionDescription()
+        outExpression.name = "bytesOutTotal"
+        outExpression.expression = NSExpression(forFunction: "sum:", arguments: [NSExpression(forKeyPath: "bytesOut")])
+        outExpression.expressionResultType = .integer64AttributeType
+
+        request.propertiesToFetch = [
+            appExpression,
+            displayNameExpression,
+            processNameExpression,
+            inExpression,
+            outExpression
+        ]
+
+        let rows = (try? container.viewContext.fetch(request)) ?? []
+        return rows.compactMap { row in
+            guard let appIdentifier = row["appIdentifier"] as? String else { return nil }
+            return AppBandwidth(
+                id: appIdentifier,
+                displayName: row["displayName"] as? String ?? appIdentifier,
+                processName: row["processName"] as? String ?? appIdentifier,
+                pid: 0,
+                downloadBps: 0,
+                uploadBps: 0,
+                download24h: row["bytesInTotal"] as? Int64 ?? 0,
+                upload24h: row["bytesOutTotal"] as? Int64 ?? 0,
+                isActive: false
+            )
         }
-
-        return Array(apps.values)
     }
 
     func pruneUsage(olderThan date: Date) {

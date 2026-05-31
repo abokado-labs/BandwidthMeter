@@ -50,6 +50,17 @@ final class BandwidthModel: ObservableObject {
     private var connectivityTask: Task<Void, Never>?
     private var publicIPTask: Task<Void, Never>?
     private var isSyncingLaunchAtLoginSetting = false
+    private var pendingUsage: [String: AppBandwidth] = [:]
+    private var cachedUsageTotalsByApp: [String: (bytesIn: Int64, bytesOut: Int64)] = [:]
+    private var lastUsageFlushDate = Date.distantPast
+    private var lastTotalsRefreshDate = Date.distantPast
+    private var lastAppTotalsRefreshDate = Date.distantPast
+    private var lastPruneDate = Date.distantPast
+    private var lastLocalIdentityRefreshDate = Date.distantPast
+    private let usageFlushInterval: TimeInterval = 30
+    private let totalsRefreshInterval: TimeInterval = 30
+    private let localIdentityRefreshInterval: TimeInterval = 60
+    private let pruneInterval: TimeInterval = 60 * 60
 
     var menuBarLines: [String] {
         if !isInternetAvailable {
@@ -105,15 +116,17 @@ final class BandwidthModel: ObservableObject {
             guard let self else { return }
             self.wiFiNamePermissionStatus = LocationPermissionManager.shared.statusText
             self.wiFiNamePermissionDiagnostic = LocationPermissionManager.shared.diagnosticsText
-            self.refreshLocalIPAddress()
+            self.refreshLocalIPAddress(force: true)
         }
         LocationPermissionManager.shared.onDiagnosticsChanged = { [weak self] diagnostic in
             guard let self else { return }
             self.wiFiNamePermissionDiagnostic = diagnostic
             self.wiFiNamePermissionStatus = LocationPermissionManager.shared.statusText
         }
-        refreshTotals()
-        refreshLocalIPAddress()
+        refreshTotals(force: true)
+        refreshUsageTotalsByApp(force: true)
+        refreshLocalIPAddress(force: true)
+        pruneExpiredUsage(force: true)
         startPublicIPChecks()
         startAutomaticSpeedTests()
         startConnectivityChecks()
@@ -127,6 +140,7 @@ final class BandwidthModel: ObservableObject {
     }
 
     func stop() {
+        flushPendingUsage(force: true)
         sampleTask?.cancel()
         sampleTask = nil
         speedTestTask?.cancel()
@@ -182,18 +196,40 @@ final class BandwidthModel: ObservableObject {
         }
         download24h = 0
         upload24h = 0
-        refreshTotals()
+        pendingUsage.removeAll()
+        cachedUsageTotalsByApp = [:]
+        refreshTotals(force: true)
+        refreshUsageTotalsByApp(force: true)
     }
 
     func requestWiFiNamePermission() {
         LocationPermissionManager.shared.requestAuthorization()
         wiFiNamePermissionStatus = LocationPermissionManager.shared.statusText
         wiFiNamePermissionDiagnostic = LocationPermissionManager.shared.diagnosticsText
-        refreshLocalIPAddress()
+        refreshLocalIPAddress(force: true)
     }
 
     func appActivity(since date: Date) -> [AppBandwidth] {
-        var historical = Dictionary(uniqueKeysWithValues: store.usageApps(since: date).map { ($0.id, $0) })
+        var historical: [String: AppBandwidth] = [:]
+        for app in store.usageApps(since: date) {
+            mergeHistoricalApp(app, into: &historical)
+        }
+
+        for pendingApp in pendingUsage.values {
+            if var existing = historical[pendingApp.id] {
+                existing.download24h += pendingApp.sampledDownloadBytes
+                existing.upload24h += pendingApp.sampledUploadBytes
+                historical[pendingApp.id] = existing
+            } else {
+                var app = pendingApp
+                app.downloadBps = 0
+                app.uploadBps = 0
+                app.download24h = pendingApp.sampledDownloadBytes
+                app.upload24h = pendingApp.sampledUploadBytes
+                app.isActive = false
+                historical[pendingApp.id] = app
+            }
+        }
 
         for liveApp in apps {
             var merged = historical[liveApp.id] ?? liveApp
@@ -210,6 +246,17 @@ final class BandwidthModel: ObservableObject {
         return filterHiddenApps(Array(historical.values))
     }
 
+    private func mergeHistoricalApp(_ app: AppBandwidth, into historical: inout [String: AppBandwidth]) {
+        guard var existing = historical[app.id] else {
+            historical[app.id] = app
+            return
+        }
+
+        existing.download24h += app.download24h
+        existing.upload24h += app.upload24h
+        historical[app.id] = existing
+    }
+
     private func collectSample() async {
         do {
             let sample = try await sampler.sample()
@@ -218,13 +265,16 @@ final class BandwidthModel: ObservableObject {
             recordRateSample(downloadBps: rawDownloadBps, uploadBps: rawUploadBps)
             applySmoothedRates()
             activeInterface = sample.interfaceName
-            refreshLocalIPAddress()
+            refreshLocalIPAddressIfNeeded()
             lastSampleStatus = sample.apps.isEmpty ? "No active network processes" : "Live"
-            let visibleApps = filterHiddenApps(settings.groupApps ? AppGrouper.group(sample.apps) : sample.apps)
+            let groupedApps = settings.groupApps ? AppGrouper.group(sample.apps) : sample.apps
+            accumulateUsage(groupedApps)
+            flushPendingUsageIfNeeded()
+            refreshTotalsIfNeeded()
+            refreshUsageTotalsByAppIfNeeded()
+            pruneExpiredUsageIfNeeded()
+            let visibleApps = filterHiddenApps(groupedApps)
             apps = attachUsageTotals(to: visibleApps)
-            store.insertUsage(apps)
-            refreshTotals()
-            pruneExpiredUsage()
             onStatusChange?()
         } catch {
             lastSampleStatus = error.localizedDescription
@@ -262,26 +312,99 @@ final class BandwidthModel: ObservableObject {
         totalUploadBps = samples.map(\.uploadBps).reduce(0, +) / Double(samples.count)
     }
 
-    private func refreshTotals() {
+    private func refreshTotals(force: Bool = false) {
+        if !force, Date().timeIntervalSince(lastTotalsRefreshDate) < totalsRefreshInterval {
+            return
+        }
         let totals = store.usageTotals(since: Date().addingTimeInterval(-24 * 60 * 60))
-        download24h = totals.bytesIn
-        upload24h = totals.bytesOut
+        let pendingTotals = pendingUsage.values.reduce((bytesIn: Int64(0), bytesOut: Int64(0))) { partial, app in
+            (partial.bytesIn + app.sampledDownloadBytes, partial.bytesOut + app.sampledUploadBytes)
+        }
+        download24h = totals.bytesIn + pendingTotals.bytesIn
+        upload24h = totals.bytesOut + pendingTotals.bytesOut
+        lastTotalsRefreshDate = Date()
     }
 
     private func attachUsageTotals(to apps: [AppBandwidth]) -> [AppBandwidth] {
-        let totals = store.usageTotalsByApp(since: Date().addingTimeInterval(-24 * 60 * 60))
         return apps.map { app in
             var app = app
-            let appTotals = totals[app.id] ?? (0, 0)
+            let storedTotals = cachedUsageTotalsByApp[app.id] ?? (0, 0)
+            let pendingTotals = pendingUsage[app.id].map { ($0.sampledDownloadBytes, $0.sampledUploadBytes) } ?? (0, 0)
+            let appTotals = (
+                bytesIn: storedTotals.bytesIn + pendingTotals.0,
+                bytesOut: storedTotals.bytesOut + pendingTotals.1
+            )
             app.download24h = appTotals.bytesIn
             app.upload24h = appTotals.bytesOut
             return app
         }
     }
 
-    private func pruneExpiredUsage() {
+    private func refreshTotalsIfNeeded() {
+        refreshTotals()
+    }
+
+    private func refreshUsageTotalsByApp(force: Bool = false) {
+        if !force, Date().timeIntervalSince(lastAppTotalsRefreshDate) < totalsRefreshInterval {
+            return
+        }
+        cachedUsageTotalsByApp = store.usageTotalsByApp(since: Date().addingTimeInterval(-24 * 60 * 60))
+        let storedTotals = cachedUsageTotalsByApp.values.reduce((bytesIn: Int64(0), bytesOut: Int64(0))) { partial, app in
+            (partial.bytesIn + app.bytesIn, partial.bytesOut + app.bytesOut)
+        }
+        let pendingTotals = pendingUsage.values.reduce((bytesIn: Int64(0), bytesOut: Int64(0))) { partial, app in
+            (partial.bytesIn + app.sampledDownloadBytes, partial.bytesOut + app.sampledUploadBytes)
+        }
+        download24h = storedTotals.bytesIn + pendingTotals.bytesIn
+        upload24h = storedTotals.bytesOut + pendingTotals.bytesOut
+        lastTotalsRefreshDate = Date()
+        lastAppTotalsRefreshDate = Date()
+    }
+
+    private func refreshUsageTotalsByAppIfNeeded() {
+        refreshUsageTotalsByApp()
+    }
+
+    private func accumulateUsage(_ apps: [AppBandwidth]) {
+        for app in apps where app.sampledDownloadBytes > 0 || app.sampledUploadBytes > 0 {
+            if var existing = pendingUsage[app.id] {
+                existing.sampledDownloadBytes += app.sampledDownloadBytes
+                existing.sampledUploadBytes += app.sampledUploadBytes
+                existing.downloadBps = app.downloadBps
+                existing.uploadBps = app.uploadBps
+                pendingUsage[app.id] = existing
+            } else {
+                pendingUsage[app.id] = app
+            }
+        }
+    }
+
+    private func flushPendingUsageIfNeeded() {
+        flushPendingUsage()
+    }
+
+    private func flushPendingUsage(force: Bool = false) {
+        guard !pendingUsage.isEmpty else { return }
+        if !force, Date().timeIntervalSince(lastUsageFlushDate) < usageFlushInterval {
+            return
+        }
+        store.insertUsage(Array(pendingUsage.values))
+        pendingUsage.removeAll()
+        lastUsageFlushDate = Date()
+        refreshUsageTotalsByApp(force: true)
+    }
+
+    private func pruneExpiredUsage(force: Bool = false) {
+        if !force, Date().timeIntervalSince(lastPruneDate) < pruneInterval {
+            return
+        }
         let cutoff = Calendar.current.date(byAdding: .day, value: -settings.retentionDays, to: Date()) ?? .distantPast
         store.pruneUsage(olderThan: cutoff)
+        lastPruneDate = Date()
+    }
+
+    private func pruneExpiredUsageIfNeeded() {
+        pruneExpiredUsage()
     }
 
     private func filterHiddenApps(_ apps: [AppBandwidth]) -> [AppBandwidth] {
@@ -352,12 +475,20 @@ final class BandwidthModel: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    private func refreshLocalIPAddress() {
+    private func refreshLocalIPAddress(force: Bool = false) {
+        if !force, Date().timeIntervalSince(lastLocalIdentityRefreshDate) < localIdentityRefreshInterval {
+            return
+        }
         networkConnections = NetworkIdentity.activeConnections()
         localIPAddress = networkConnections.first?.localIP ?? "Unavailable"
         let wifiInfo = NetworkIdentity.wifiInfo()
         wifiNetworkName = wifiInfo.networkName
         wifiSignal = wifiInfo.signal
+        lastLocalIdentityRefreshDate = Date()
+    }
+
+    private func refreshLocalIPAddressIfNeeded() {
+        refreshLocalIPAddress()
     }
 
     private func startPublicIPChecks() {
@@ -440,6 +571,8 @@ struct AppBandwidth: Identifiable, Hashable {
     var uploadBps: Double
     var download24h: Int64
     var upload24h: Int64
+    var sampledDownloadBytes: Int64 = 0
+    var sampledUploadBytes: Int64 = 0
     var isActive = true
 }
 
@@ -530,7 +663,7 @@ enum SamplingInterval: Int, CaseIterable, Identifiable {
         case .two:
             return "2 seconds"
         case .three:
-            return "3 seconds"
+            return "3 seconds (Recommended)"
         }
     }
 }
@@ -567,7 +700,7 @@ struct AppSettings {
     var showMenuArrows = true
     var groupApps = true
     var hideSystemServices = false
-    var samplingIntervalSeconds = 1
+    var samplingIntervalSeconds = 3
     var rateSmoothingSeconds = 3
     var retentionDays = 30
     var automaticSpeedTestsEnabled = false
@@ -603,6 +736,13 @@ struct AppSettings {
         let samplingIntervalSeconds = defaults.integer(forKey: "samplingIntervalSeconds")
         if SamplingInterval(rawValue: samplingIntervalSeconds) != nil {
             settings.samplingIntervalSeconds = samplingIntervalSeconds
+        }
+        if !defaults.bool(forKey: "migratedDefaultSamplingIntervalToThreeSeconds") {
+            if defaults.object(forKey: "samplingIntervalSeconds") == nil || settings.samplingIntervalSeconds == 1 {
+                settings.samplingIntervalSeconds = 3
+                defaults.set(settings.samplingIntervalSeconds, forKey: "samplingIntervalSeconds")
+            }
+            defaults.set(true, forKey: "migratedDefaultSamplingIntervalToThreeSeconds")
         }
         let rateSmoothingSeconds = defaults.integer(forKey: "rateSmoothingSeconds")
         if RateSmoothing(rawValue: rateSmoothingSeconds) != nil {

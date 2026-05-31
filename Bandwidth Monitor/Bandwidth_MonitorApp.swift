@@ -141,7 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .font: font,
             .foregroundColor: NSColor.labelColor
         ]
-        let icon = model.settings.showIcon ? "􀙇" : nil
         let width = reservedMenuBarLength(stacked: stacked) - 6
         let height = max(NSStatusBar.system.thickness, 22)
         let image = NSImage(size: NSSize(width: width, height: height))
@@ -155,13 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let blockHeight = lineHeight * CGFloat(visibleEntries.count)
             let firstBaselineTop = floor((height + blockHeight) / 2) - lineHeight + 1
             for (index, entry) in visibleEntries.enumerated() {
-                drawMenuBarEntry(entry, icon: index == 0 ? icon : nil, at: NSPoint(x: 3, y: firstBaselineTop - (CGFloat(index) * lineHeight)), attributes: attributes)
+                drawMenuBarEntry(entry, includesIcon: index == 0 && model.settings.showIcon, at: NSPoint(x: 3, y: firstBaselineTop - (CGFloat(index) * lineHeight)), attributes: attributes)
             }
         } else {
             let y = floor((height - fontSize) / 2)
             var x: CGFloat = 3
             for (index, entry) in visibleEntries.enumerated() {
-                let usedWidth = drawMenuBarEntry(entry, icon: index == 0 ? icon : nil, at: NSPoint(x: x, y: y), attributes: attributes)
+                let usedWidth = drawMenuBarEntry(entry, includesIcon: index == 0 && model.settings.showIcon, at: NSPoint(x: x, y: y), attributes: attributes)
                 x += usedWidth + 10
             }
         }
@@ -172,10 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @discardableResult
-    private func drawMenuBarEntry(_ entry: MenuBarEntry, icon: String?, at origin: NSPoint, attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+    private func drawMenuBarEntry(_ entry: MenuBarEntry, includesIcon: Bool, at origin: NSPoint, attributes: [NSAttributedString.Key: Any]) -> CGFloat {
         var x = origin.x
-        if let icon {
-            (icon as NSString).draw(at: NSPoint(x: x, y: origin.y), withAttributes: attributes)
+        if includesIcon {
+            drawMenuIcon(at: NSPoint(x: x, y: origin.y), attributes: attributes)
             x += menuIconWidth(attributes: attributes)
         }
 
@@ -197,7 +196,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func menuIconWidth(attributes: [NSAttributedString.Key: Any]) -> CGFloat {
-        model.settings.showIcon ? ceil(("􀙇 " as NSString).size(withAttributes: attributes).width) : 0
+        guard model.settings.showIcon else { return 0 }
+        return menuIconSize(attributes: attributes) + 3
+    }
+
+    private func menuIconSize(attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        let font = attributes[.font] as? NSFont
+        return ceil(font?.pointSize ?? 10)
+    }
+
+    private func drawMenuIcon(at origin: NSPoint, attributes: [NSAttributedString.Key: Any]) {
+        guard let symbol = NSImage(systemSymbolName: "gauge.with.dots.needle.67percent", accessibilityDescription: nil)
+                ?? NSImage(systemSymbolName: "gauge", accessibilityDescription: nil) else {
+            return
+        }
+        let size = menuIconSize(attributes: attributes)
+        let font = attributes[.font] as? NSFont
+        let yOffset = max(((font?.pointSize ?? size) - size) / 2, 0)
+        let rect = NSRect(x: origin.x, y: origin.y + yOffset, width: size, height: size)
+        symbol.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
     }
 
     private func menuArrowWidth(attributes: [NSAttributedString.Key: Any]) -> CGFloat {
